@@ -34,6 +34,7 @@ type Msg
   = Edit Int 
   | Save Int
   | Revise Int String
+  | Add
 
 
 lyrics : List String
@@ -88,7 +89,8 @@ view model =
         div
           [ style "backgroundColor" "beige"
           ]
-          [ renderContent
+          [ button [onClick Add] [text "Add"]
+          , renderContent
           ]
 
       renderContent : Html Msg
@@ -98,10 +100,12 @@ view model =
           , style "margin-left" "auto"
           , style "margin-right" "auto"
           ]
-          (model.memories
-          |> Array.indexedMap renderMemory
-          |> Array.toList
-          |> List.intersperse (hr [] []))
+          ( model.memories
+            |> Array.indexedMap renderMemory
+            |> Array.toList
+            |> List.intersperse (hr [] [])
+            |> List.reverse
+          )
 
       renderMemory : Int -> Memory -> Html Msg
       renderMemory i memory =
@@ -183,6 +187,10 @@ update msg model =
             ({ model | memories = memories }
             , Cmd.none
             )
+    Add ->
+      ({ model | memories = Array.push (Memory "" True) model.memories }
+      , Cmd.none
+      )
 
 
 subscriptions : Model -> Sub Msg
