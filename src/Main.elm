@@ -1,6 +1,8 @@
 import Browser exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (..)
+import Array exposing (Array)
 
 
 {--
@@ -18,19 +20,24 @@ main =
 
 
 type alias Model =
-  { memories : List Memory
+  { memories : Array Memory
   }
 
 
-type alias Memory = String
+type alias Memory = 
+  { content : String
+  , isEditing : Bool
+  }
 
 
-type alias Msg = Int
+type Msg
+  = Edit Int 
+  | Save Int
+  | Revise Int String
 
 
-init : () -> (Model, Cmd Msg)
-init _ =
-  ( Model
+lyrics : List String
+lyrics =
       [ 
         """
         My eyelids float
@@ -64,6 +71,11 @@ init _ =
         The ache and the apathy
         """
       ]
+
+
+init : () -> (Model, Cmd Msg)
+init _ =
+  ( Model (Array.fromList <| List.map (\x -> Memory x False) lyrics)
   , Cmd.none
   )
 
@@ -87,12 +99,29 @@ view model =
           , style "margin-right" "auto"
           ]
           (model.memories
-          |> List.map renderMemory
+          |> Array.indexedMap renderMemory
+          |> Array.toList
           |> List.intersperse (hr [] []))
 
-      renderMemory : Memory -> Html Msg
-      renderMemory memory =
-        div [] [text memory]
+      renderMemory : Int -> Memory -> Html Msg
+      renderMemory i memory =
+        if memory.isEditing
+        then renderEdit i memory
+        else renderView i memory
+
+      renderView : Int -> Memory -> Html Msg
+      renderView i memory =
+        div []
+          [ text memory.content
+          , button [onClick (Edit i)] [text "Edit"]
+          ]
+
+      renderEdit : Int -> Memory -> Html Msg
+      renderEdit i memory =
+        div []
+        [ textarea [value memory.content, onInput (Revise i)] []
+        , button [onClick (Save i)] [text "Save"]
+        ]
   in
       Document
         "pensieve"
@@ -102,9 +131,58 @@ view model =
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
-  ( model
-  , Cmd.none
-  )
+  case msg of
+    Edit i ->
+      let
+          target : Maybe Memory
+          target = Array.get i model.memories
+
+          next : Maybe Memory
+          next =
+            target
+            |> Maybe.map (\t -> { t | isEditing = True })
+      in
+          next
+          |> Maybe.map (\n -> Array.set i n model.memories)
+          |> Maybe.withDefault model.memories
+          |> \memories -> 
+            ({ model | memories = memories }
+            , Cmd.none
+            )
+    Save i -> 
+      let
+          target : Maybe Memory
+          target = Array.get i model.memories
+
+          next : Maybe Memory
+          next =
+            target
+            |> Maybe.map (\t -> { t | isEditing = False })
+      in
+          next
+          |> Maybe.map (\n -> Array.set i n model.memories)
+          |> Maybe.withDefault model.memories
+          |> \memories -> 
+            ({ model | memories = memories }
+            , Cmd.none
+            )
+    Revise i newContent ->
+      let
+          target : Maybe Memory
+          target = Array.get i model.memories
+
+          next : Maybe Memory
+          next =
+            target
+            |> Maybe.map (\t -> { t | content = newContent })
+      in
+          next
+          |> Maybe.map (\n -> Array.set i n model.memories)
+          |> Maybe.withDefault model.memories
+          |> \memories -> 
+            ({ model | memories = memories }
+            , Cmd.none
+            )
 
 
 subscriptions : Model -> Sub Msg
