@@ -1,8 +1,12 @@
+port module Main exposing (..)
+
 import Browser exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Array exposing (Array)
+import Json.Encode
+import Json.Decode
 
 
 {--
@@ -12,6 +16,9 @@ TODO
 - edit memories
 - add memories
 - persist to local storage
+
+persisting data locally is the first step, but also want to leave room for 1) remotely / distributedly recording memories and 2) exporting / sharing and sharing memories
+
 --}
 
 
@@ -25,8 +32,8 @@ type alias Model =
 
 
 type alias Memory = 
-  { content : String
-  , isEditing : Bool
+  { isEditing : Bool
+  , content : String
   }
 
 
@@ -37,46 +44,23 @@ type Msg
   | Add
 
 
-lyrics : List String
-lyrics =
-      [ 
-        """
-        My eyelids float
-        Between two states
-        On the borderline
-        Flows a slow intake
-        They don't let much in
-        I don't let much out
-        Just a broken bulb
-        Flickering with doubt
-        """,
-
-        """
-        Misery loves me
-        But I don't love her
-        It's a one-way street
-        Circling planet earth
-        If I take a right
-        Maybe I'll outrun
-        To the great unknown
-        Goes the great no one
-        """,
-
-        """
-        Wanna move
-        I do I do I do
-        I'm trying to get this right
-        But I'm losing the appetite
-        It's not the way I'd choose I'd choose I'd choose
-        Always caught in between
-        The ache and the apathy
-        """
-      ]
+port cache : Json.Encode.Value -> Cmd msg
 
 
-init : () -> (Model, Cmd Msg)
-init _ =
-  ( Model (Array.fromList <| List.map (\x -> Memory x False) lyrics)
+type alias Flags = Json.Decode.Value
+
+
+decodeMemories : Flags -> Array Memory
+decodeMemories json =
+  json
+  |> Json.Decode.decodeValue (Json.Decode.array Json.Decode.string)
+  |> Result.withDefault Array.empty
+  |> Array.map (Memory False)
+
+
+init : Flags -> (Model, Cmd Msg)
+init flags =
+  ( Model <| decodeMemories flags
   , Cmd.none
   )
 
@@ -162,13 +146,19 @@ update msg model =
           next =
             target
             |> Maybe.map (\t -> { t | isEditing = False })
+
+          encodeMemories : Array Memory -> Json.Encode.Value
+          encodeMemories memories =
+            Json.Encode.array
+              (\memory -> Json.Encode.string memory.content) -- better way to write this?
+              memories
       in
           next
           |> Maybe.map (\n -> Array.set i n model.memories)
           |> Maybe.withDefault model.memories
           |> \memories -> 
             ({ model | memories = memories }
-            , Cmd.none
+            , cache <| encodeMemories memories
             )
     Revise i newContent ->
       let
@@ -188,7 +178,7 @@ update msg model =
             , Cmd.none
             )
     Add ->
-      ({ model | memories = Array.push (Memory "" True) model.memories }
+      ({ model | memories = Array.push (Memory True "") model.memories }
       , Cmd.none
       )
 
