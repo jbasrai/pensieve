@@ -4,9 +4,11 @@ import Browser exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Array exposing (Array)
-import Json.Encode
-import Json.Decode
+import Time exposing (..)
+import Array exposing (..)
+import Debug exposing (..)
+import Json.Encode as Encode
+import Json.Decode as Decode
 
 
 {--
@@ -32,7 +34,80 @@ type alias Model =
   }
 
 
-type alias Memory = String
+type alias Memory =
+  { createdAt : Posix
+  , updatedAt : Posix
+  , title : String
+  , content : String
+  }
+
+
+memoryToTextValue : Memory -> String
+memoryToTextValue memory =
+  let
+      createdAt : String
+      createdAt =
+        memory.createdAt
+        |> Time.posixToMillis
+        |> String.fromInt
+
+      updatedAt : String
+      updatedAt =
+        memory.createdAt
+        |> Time.posixToMillis
+        |> String.fromInt
+  in
+      [ createdAt
+      , updatedAt
+      , memory.title
+      , memory.content
+      ]
+      |> String.join "\n"
+
+
+decodeMemory : String -> Memory
+decodeMemory blob =
+  let
+      lines : Array String 
+      lines = 
+        blob
+        |> String.split "\n"
+        |> Array.fromList
+
+      createdAt : Posix
+      createdAt =
+        Array.get 0 lines
+        |> Maybe.andThen String.toInt
+        |> Maybe.withDefault 0
+        |> Time.millisToPosix
+
+      -- TODO auto set
+      updatedAt : Posix
+      updatedAt =
+        Array.get 1 lines
+        |> Maybe.andThen String.toInt
+        |> Maybe.withDefault 0
+        |> Time.millisToPosix
+
+      title : String
+      title =
+        Array.get 2 lines
+        |> Maybe.withDefault ""
+
+      content : String
+      content =
+        Array.get 3 lines
+        |> Maybe.withDefault ""
+  in
+      Debug.log
+      "memory"
+      (
+      Memory
+        createdAt
+        updatedAt
+        title
+        content
+        )
 
 
 type alias Entry = 
@@ -48,18 +123,32 @@ type Msg
   | Add
 
 
-port cache : Json.Encode.Value -> Cmd msg
+port cache : Encode.Value -> Cmd msg
 
 
-type alias Flags = Json.Decode.Value
+type alias Flags = Decode.Value
 
 
 decodeEntries : Flags -> Array Entry
 decodeEntries json =
-  json
-  |> Json.Decode.decodeValue (Json.Decode.array Json.Decode.string)
-  |> Result.withDefault Array.empty
-  |> Array.map (Entry False)
+  let
+      timeDecoder : Decode.Decoder Time.Posix
+      timeDecoder =
+        Decode.map Time.millisToPosix Decode.int
+
+      memoryDecoder : Decode.Decoder Memory
+      memoryDecoder =
+        Decode.map4
+          Memory
+          (Decode.field "createdAt" timeDecoder)
+          (Decode.field "updatedAt" timeDecoder)
+          (Decode.field "title" Decode.string)
+          (Decode.field "content" Decode.string)
+  in
+      json
+      |> Decode.decodeValue (Decode.array memoryDecoder)
+      |> Result.withDefault Array.empty
+      |> Array.map (Entry False)
 
 
 init : Flags -> (Model, Cmd Msg)
@@ -98,20 +187,20 @@ view model =
       renderEntry : Int -> Entry -> Html Msg
       renderEntry i entry =
         if entry.isEditing
-        then renderWritable i entry
-        else renderReadable i entry
+        then renderWritable i entry.memory
+        else renderReadable i entry.memory
 
-      renderReadable : Int -> Entry -> Html Msg
-      renderReadable i entry =
+      renderReadable : Int -> Memory -> Html Msg
+      renderReadable i memory =
         div []
-          [ text entry.memory
+          [ text memory.content
           , button [onClick (Edit i)] [text "Edit"]
           ]
 
-      renderWritable : Int -> Entry -> Html Msg
-      renderWritable i entry =
+      renderWritable : Int -> Memory -> Html Msg
+      renderWritable i memory =
         div []
-        [ textarea [value entry.memory, onInput (Revise i)] []
+        [ textarea [value <| memoryToTextValue memory, onInput (Revise i)] []
         , button [onClick (Save i)] [text "Save"]
         ]
   in
@@ -151,18 +240,27 @@ update msg model =
             target
             |> Maybe.map (\t -> { t | isEditing = False })
 
-          encodeEntries : Array Entry -> Json.Encode.Value
-          encodeEntries entries =
-            Json.Encode.array
-              (\entry -> Json.Encode.string entry.memory) -- better way to write this?
-              entries
+          encodeMemories : Array Memory -> Encode.Value
+          encodeMemories memories =
+            Encode.array
+              encodeMemory
+              memories
+
+          encodeMemory : Memory -> Encode.Value
+          encodeMemory memory =
+            Encode.object
+              [ ("createdAt", Encode.int <| Time.posixToMillis memory.createdAt)
+              , ("updatedAt", Encode.int <| Time.posixToMillis memory.updatedAt)
+              , ("title", Encode.string memory.title)
+              , ("content", Encode.string memory.content)
+              ]
       in
           next
           |> Maybe.map (\n -> Array.set i n model.entries)
           |> Maybe.withDefault model.entries
           |> \entries -> 
             ({ model | entries = entries }
-            , cache <| encodeEntries entries
+            , cache <| encodeMemories (Array.map .memory entries)
             )
     Revise i newMemory ->
       let
@@ -172,7 +270,7 @@ update msg model =
           next : Maybe Entry
           next =
             target
-            |> Maybe.map (\t -> { t | memory = newMemory })
+            |> Maybe.map (\t -> { t | memory = decodeMemory newMemory })
       in
           next
           |> Maybe.map (\n -> Array.set i n model.entries)
@@ -182,9 +280,18 @@ update msg model =
             , Cmd.none
             )
     Add ->
-      ({ model | entries = Array.push (Entry True "") model.entries }
-      , Cmd.none
-      )
+      let
+          newMemory : Memory
+          newMemory =
+            Memory
+              (Time.millisToPosix 0)
+              (Time.millisToPosix 0)
+              ""
+              ""
+      in
+          ({ model | entries = Array.push (Entry True newMemory) model.entries }
+          , Cmd.none
+          )
 
 
 subscriptions : Model -> Sub Msg
