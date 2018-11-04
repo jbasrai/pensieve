@@ -10,14 +10,15 @@ import Json.Decode
 
 
 {--
-TODO
 
+TODO:
+- save memories
 - render memories
-- edit memories
-- add memories
-- persist to local storage
 
-persisting data locally is the first step, but also want to leave room for 1) remotely / distributedly recording memories and 2) exporting / sharing and sharing memories
+
+GLOSSARY:
+entry
+memory
 
 --}
 
@@ -27,13 +28,16 @@ main =
 
 
 type alias Model =
-  { memories : Array Memory
+  { entries : Array Entry
   }
 
 
-type alias Memory = 
+type alias Memory = String
+
+
+type alias Entry = 
   { isEditing : Bool
-  , content : String
+  , memory : Memory
   }
 
 
@@ -50,17 +54,17 @@ port cache : Json.Encode.Value -> Cmd msg
 type alias Flags = Json.Decode.Value
 
 
-decodeMemories : Flags -> Array Memory
-decodeMemories json =
+decodeEntries : Flags -> Array Entry
+decodeEntries json =
   json
   |> Json.Decode.decodeValue (Json.Decode.array Json.Decode.string)
   |> Result.withDefault Array.empty
-  |> Array.map (Memory False)
+  |> Array.map (Entry False)
 
 
 init : Flags -> (Model, Cmd Msg)
 init flags =
-  ( Model <| decodeMemories flags
+  ( Model <| decodeEntries flags
   , Cmd.none
   )
 
@@ -74,40 +78,40 @@ view model =
           [ style "backgroundColor" "beige"
           ]
           [ button [onClick Add] [text "Add"]
-          , renderContent
+          , renderEverything
           ]
 
-      renderContent : Html Msg
-      renderContent =
+      renderEverything : Html Msg
+      renderEverything =
         div
           [ style "width" "400px"
           , style "margin-left" "auto"
           , style "margin-right" "auto"
           ]
-          ( model.memories
-            |> Array.indexedMap renderMemory
+          ( model.entries
+            |> Array.indexedMap renderEntry
             |> Array.toList
             |> List.intersperse (hr [] [])
             |> List.reverse
           )
 
-      renderMemory : Int -> Memory -> Html Msg
-      renderMemory i memory =
-        if memory.isEditing
-        then renderEdit i memory
-        else renderView i memory
+      renderEntry : Int -> Entry -> Html Msg
+      renderEntry i entry =
+        if entry.isEditing
+        then renderWritable i entry
+        else renderReadable i entry
 
-      renderView : Int -> Memory -> Html Msg
-      renderView i memory =
+      renderReadable : Int -> Entry -> Html Msg
+      renderReadable i entry =
         div []
-          [ text memory.content
+          [ text entry.memory
           , button [onClick (Edit i)] [text "Edit"]
           ]
 
-      renderEdit : Int -> Memory -> Html Msg
-      renderEdit i memory =
+      renderWritable : Int -> Entry -> Html Msg
+      renderWritable i entry =
         div []
-        [ textarea [value memory.content, onInput (Revise i)] []
+        [ textarea [value entry.memory, onInput (Revise i)] []
         , button [onClick (Save i)] [text "Save"]
         ]
   in
@@ -122,63 +126,63 @@ update msg model =
   case msg of
     Edit i ->
       let
-          target : Maybe Memory
-          target = Array.get i model.memories
+          target : Maybe Entry
+          target = Array.get i model.entries
 
-          next : Maybe Memory
+          next : Maybe Entry
           next =
             target
             |> Maybe.map (\t -> { t | isEditing = True })
       in
           next
-          |> Maybe.map (\n -> Array.set i n model.memories)
-          |> Maybe.withDefault model.memories
-          |> \memories -> 
-            ({ model | memories = memories }
+          |> Maybe.map (\n -> Array.set i n model.entries)
+          |> Maybe.withDefault model.entries
+          |> \entries -> 
+            ({ model | entries = entries }
             , Cmd.none
             )
     Save i -> 
       let
-          target : Maybe Memory
-          target = Array.get i model.memories
+          target : Maybe Entry
+          target = Array.get i model.entries
 
-          next : Maybe Memory
+          next : Maybe Entry
           next =
             target
             |> Maybe.map (\t -> { t | isEditing = False })
 
-          encodeMemories : Array Memory -> Json.Encode.Value
-          encodeMemories memories =
+          encodeEntries : Array Entry -> Json.Encode.Value
+          encodeEntries entries =
             Json.Encode.array
-              (\memory -> Json.Encode.string memory.content) -- better way to write this?
-              memories
+              (\entry -> Json.Encode.string entry.memory) -- better way to write this?
+              entries
       in
           next
-          |> Maybe.map (\n -> Array.set i n model.memories)
-          |> Maybe.withDefault model.memories
-          |> \memories -> 
-            ({ model | memories = memories }
-            , cache <| encodeMemories memories
+          |> Maybe.map (\n -> Array.set i n model.entries)
+          |> Maybe.withDefault model.entries
+          |> \entries -> 
+            ({ model | entries = entries }
+            , cache <| encodeEntries entries
             )
-    Revise i newContent ->
+    Revise i newMemory ->
       let
-          target : Maybe Memory
-          target = Array.get i model.memories
+          target : Maybe Entry
+          target = Array.get i model.entries
 
-          next : Maybe Memory
+          next : Maybe Entry
           next =
             target
-            |> Maybe.map (\t -> { t | content = newContent })
+            |> Maybe.map (\t -> { t | memory = newMemory })
       in
           next
-          |> Maybe.map (\n -> Array.set i n model.memories)
-          |> Maybe.withDefault model.memories
-          |> \memories -> 
-            ({ model | memories = memories }
+          |> Maybe.map (\n -> Array.set i n model.entries)
+          |> Maybe.withDefault model.entries
+          |> \entries -> 
+            ({ model | entries = entries }
             , Cmd.none
             )
     Add ->
-      ({ model | memories = Array.push (Memory True "") model.memories }
+      ({ model | entries = Array.push (Entry True "") model.entries }
       , Cmd.none
       )
 
