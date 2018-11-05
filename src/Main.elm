@@ -7,6 +7,7 @@ import Html.Events exposing (..)
 import Time exposing (..)
 import Array exposing (..)
 import Debug exposing (..)
+import Task exposing (..)
 import Json.Encode as Encode
 import Json.Decode as Decode
 
@@ -14,8 +15,8 @@ import Json.Decode as Decode
 {--
 
 TODO:
-- save memories
-- render memories
+- delete
+- style memory
 
 
 GLOSSARY:
@@ -53,7 +54,7 @@ memoryToTextValue memory =
 
       updatedAt : String
       updatedAt =
-        memory.createdAt
+        memory.updatedAt
         |> Time.posixToMillis
         |> String.fromInt
   in
@@ -99,15 +100,11 @@ decodeMemory blob =
         Array.get 3 lines
         |> Maybe.withDefault ""
   in
-      Debug.log
-      "memory"
-      (
       Memory
         createdAt
         updatedAt
         title
         content
-        )
 
 
 type alias Entry = 
@@ -117,10 +114,12 @@ type alias Entry =
 
 
 type Msg
-  = Edit Int 
+  = Edit Int Posix
   | Save Int
   | Revise Int String
-  | Add
+  | Add Posix
+  | GetTimeThenEdit Int
+  | GetTimeThenAdd
 
 
 port cache : Encode.Value -> Cmd msg
@@ -166,7 +165,7 @@ view model =
         div
           [ style "backgroundColor" "beige"
           ]
-          [ button [onClick Add] [text "Add"]
+          [ button [onClick GetTimeThenAdd] [text "Add"]
           , renderEverything
           ]
 
@@ -194,7 +193,7 @@ view model =
       renderReadable i memory =
         div []
           [ text memory.content
-          , button [onClick (Edit i)] [text "Edit"]
+          , button [onClick (GetTimeThenEdit i)] [text "Edit"]
           ]
 
       renderWritable : Int -> Memory -> Html Msg
@@ -213,15 +212,23 @@ view model =
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
-    Edit i ->
+    GetTimeThenEdit i ->
+      ( model
+      , Task.perform (Edit i) (Time.now)
+      )
+    Edit i time ->
       let
           target : Maybe Entry
           target = Array.get i model.entries
 
+          updateTime : Memory -> Memory
+          updateTime memory =
+            { memory | updatedAt = time }
+
           next : Maybe Entry
           next =
             target
-            |> Maybe.map (\t -> { t | isEditing = True })
+            |> Maybe.map (\t -> { t | isEditing = True, memory = updateTime t.memory })
       in
           next
           |> Maybe.map (\n -> Array.set i n model.entries)
@@ -279,12 +286,16 @@ update msg model =
             ({ model | entries = entries }
             , Cmd.none
             )
-    Add ->
+    GetTimeThenAdd ->
+      ( model
+      , Task.perform (Add) (Time.now)
+      )
+    Add time ->
       let
           newMemory : Memory
           newMemory =
             Memory
-              (Time.millisToPosix 0)
+              time
               (Time.millisToPosix 0)
               ""
               ""
