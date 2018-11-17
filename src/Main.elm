@@ -163,8 +163,7 @@ view model =
       renderPage : Html Msg
       renderPage =
         div
-          [ style "backgroundColor" "beige"
-          ]
+          []
           [ button [onClick GetTimeThenAdd] [text "Add"]
           , renderEverything
           ]
