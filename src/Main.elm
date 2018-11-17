@@ -10,6 +10,7 @@ import Debug exposing (..)
 import Task exposing (..)
 import Json.Encode as Encode
 import Json.Decode as Decode
+import Markdown exposing (..)
 
 
 {--
@@ -82,7 +83,6 @@ decodeMemory blob =
         |> Maybe.withDefault 0
         |> Time.millisToPosix
 
-      -- TODO auto set
       updatedAt : Posix
       updatedAt =
         Array.get 1 lines
@@ -93,12 +93,16 @@ decodeMemory blob =
       title : String
       title =
         Array.get 2 lines
-        |> Maybe.withDefault ""
+        |> Debug.log "title"
+        |> Maybe.andThen (\t -> if (t == "") then Nothing else Just t)
+        |> Maybe.withDefault "untitled"
 
       content : String
       content =
-        Array.get 3 lines
-        |> Maybe.withDefault ""
+        lines
+        |> Array.slice 3 (Array.length lines)
+        |> toList
+        |> String.join "\n"
   in
       Memory
         createdAt
@@ -190,15 +194,26 @@ view model =
 
       renderReadable : Int -> Memory -> Html Msg
       renderReadable i memory =
-        div []
-          [ text memory.content
-          , button [onClick (GetTimeThenEdit i)] [text "Edit"]
-          ]
+        let
+            blob : String
+            blob =
+              "# " ++ memory.title ++ "\n" ++ memory.content
+        in
+            div []
+              [ Markdown.toHtml [] blob 
+              , button [onClick (GetTimeThenEdit i)] [text "Edit"]
+              ]
 
       renderWritable : Int -> Memory -> Html Msg
       renderWritable i memory =
         div []
-        [ textarea [value <| memoryToTextValue memory, onInput (Revise i)] []
+        [ textarea
+          [ value <| memoryToTextValue memory
+          , onInput (Revise i)
+          , style "height" "300px"
+          , style "width" "100%"
+          ]
+          []
         , button [onClick (Save i)] [text "Save"]
         ]
   in
