@@ -39,7 +39,7 @@ type alias Model =
 type alias Memory =
   { createdAt : Posix
   , updatedAt : Posix
-  , title : String
+  , title : Maybe String
   , content : String
   }
 
@@ -59,11 +59,12 @@ memoryToTextValue memory =
         |> Time.posixToMillis
         |> String.fromInt
   in
-      [ createdAt
-      , updatedAt
+      [ Just createdAt
+      , Just updatedAt
       , memory.title
-      , memory.content
+      , Just memory.content
       ]
+      |> List.filterMap identity
       |> String.join "\n"
 
 
@@ -90,19 +91,22 @@ decodeMemory blob =
         |> Maybe.withDefault 0
         |> Time.millisToPosix
 
-      title : String
-      title =
-        Array.get 2 lines
-        |> Debug.log "title"
-        |> Maybe.andThen (\t -> if (t == "") then Nothing else Just t)
-        |> Maybe.withDefault "untitled"
-
-      content : String
-      content =
-        lines
-        |> Array.slice 3 (Array.length lines)
-        |> toList
-        |> String.join "\n"
+      (title, content) =
+        if (Array.length lines >= 4)
+        then
+          ( lines
+            |> Array.get 2
+          , lines
+            |> Array.slice 3 (Array.length lines)
+            |> toList
+            |> String.join "\n"
+          )
+        else
+          ( Nothing
+          , lines
+            |> Array.get 2
+            |> Maybe.withDefault ""
+          )
   in
       Memory
         createdAt
@@ -145,7 +149,7 @@ decodeEntries json =
           Memory
           (Decode.field "createdAt" timeDecoder)
           (Decode.field "updatedAt" timeDecoder)
-          (Decode.field "title" Decode.string)
+          (Decode.field "title" (Decode.nullable Decode.string))
           (Decode.field "content" Decode.string)
   in
       json
@@ -197,7 +201,10 @@ view model =
         let
             blob : String
             blob =
-              "# " ++ memory.title ++ "\n" ++ memory.content
+              memory.title
+              |> Maybe.map (\t -> "# " ++ t ++ "\n")
+              |> Maybe.withDefault ""
+              |> \t -> t ++ memory.content
         in
             div []
               [ Markdown.toHtml [] blob 
@@ -272,7 +279,11 @@ update msg model =
             Encode.object
               [ ("createdAt", Encode.int <| Time.posixToMillis memory.createdAt)
               , ("updatedAt", Encode.int <| Time.posixToMillis memory.updatedAt)
-              , ("title", Encode.string memory.title)
+              , ( "title"
+                ,  memory.title
+                  |> Maybe.map Encode.string
+                  |> Maybe.withDefault Encode.null
+                )
               , ("content", Encode.string memory.content)
               ]
       in
@@ -311,7 +322,7 @@ update msg model =
             Memory
               time
               (Time.millisToPosix 0)
-              ""
+              Nothing
               ""
       in
           ({ model | entries = Array.push (Entry True newMemory) model.entries }
