@@ -31,6 +31,14 @@ main =
   Browser.document { init = init, view = view, update = update, subscriptions = subscriptions }
 
 
+toEnglishMonth : Time.Month -> String
+toEnglishMonth month =
+  case month of
+    Time.Oct -> "October"
+    Time.Nov -> "November"
+    _ -> "Some month"
+
+
 type alias Model =
   { entries : Array Entry
   }
@@ -199,12 +207,41 @@ view model =
       renderReadable : Int -> Memory -> Html Msg
       renderReadable i memory =
         let
+            title : Maybe String
+            title = 
+              memory.title
+              |> Maybe.map ((++) "# ")
+
+            month : String
+            month =
+              memory.createdAt
+              |> Time.toMonth Time.utc
+              |> toEnglishMonth
+
+            day : String
+            day =
+              memory.createdAt
+              |> Time.toDay Time.utc
+              |> String.fromInt
+
+            year : String
+            year =
+              memory.createdAt
+              |> Time.toYear Time.utc
+              |> String.fromInt
+
+            createdAt : String
+            createdAt =
+              "## " ++ month ++ " " ++ day ++ ", " ++ year
+
             blob : String
             blob =
-              memory.title
-              |> Maybe.map (\t -> "# " ++ t ++ "\n")
-              |> Maybe.withDefault ""
-              |> \t -> t ++ memory.content
+              [ title
+              , Just createdAt
+              , Just memory.content
+              ]
+              |> List.filterMap identity
+              |> String.join "\n"
         in
             div []
               [ Markdown.toHtml [] blob 
