@@ -15,14 +15,7 @@ import Markdown exposing (..)
 
 {--
 
-TODO:
-- delete
-- style memory
-
-
-GLOSSARY:
-entry
-memory
+TODO
 
 --}
 
@@ -125,6 +118,7 @@ decodeMemory blob =
 
 type alias Entry = 
   { isEditing : Bool
+  , isDeleting : Bool
   , memory : Memory
   }
 
@@ -136,6 +130,8 @@ type Msg
   | Add Posix
   | GetTimeThenEdit Int
   | GetTimeThenAdd
+  | StartDeleting Int
+  | ConfirmDelete Int
 
 
 port cache : Encode.Value -> Cmd msg
@@ -163,7 +159,7 @@ decodeEntries json =
       json
       |> Decode.decodeValue (Decode.array memoryDecoder)
       |> Result.withDefault Array.empty
-      |> Array.map (Entry False)
+      |> Array.map (Entry False False)
 
 
 init : Flags -> (Model, Cmd Msg)
@@ -202,10 +198,10 @@ view model =
       renderEntry i entry =
         if entry.isEditing
         then renderWritable i entry.memory
-        else renderReadable i entry.memory
+        else renderReadable i entry.isDeleting entry.memory
 
-      renderReadable : Int -> Memory -> Html Msg
-      renderReadable i memory =
+      renderReadable : Int -> Bool -> Memory -> Html Msg
+      renderReadable i isDeleting memory =
         let
             title : Maybe String
             title = 
@@ -242,10 +238,21 @@ view model =
               ]
               |> List.filterMap identity
               |> String.join "\n"
+
+            renderDelete : Html Msg
+            renderDelete =
+              if
+                isDeleting
+              then
+                button [onClick (ConfirmDelete i), style "margin-left" "50px" ] [text "Confirm"]
+              else
+                button [onClick (StartDeleting i)] [text "Delete"]
+
         in
             div []
               [ Markdown.toHtml [] blob 
               , button [onClick (GetTimeThenEdit i)] [text "Edit"]
+              , renderDelete
               ]
 
       renderWritable : Int -> Memory -> Html Msg
@@ -267,9 +274,58 @@ view model =
         ]
 
 
+encodeMemories : Array Memory -> Encode.Value
+encodeMemories memories =
+  Encode.array
+    encodeMemory
+    memories
+
+
+encodeMemory : Memory -> Encode.Value
+encodeMemory memory =
+  Encode.object
+    [ ("createdAt", Encode.int <| Time.posixToMillis memory.createdAt)
+    , ("updatedAt", Encode.int <| Time.posixToMillis memory.updatedAt)
+    , ( "title"
+      ,  memory.title
+        |> Maybe.map Encode.string
+        |> Maybe.withDefault Encode.null
+      )
+    , ("content", Encode.string memory.content)
+    ]
+
+
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
+    StartDeleting i ->
+      let
+          nextEntry : Maybe Entry
+          nextEntry = 
+            model.entries
+            |> Array.get i
+            |> Maybe.map (\t -> { t | isDeleting = True })
+          
+          nextEntries : Array Entry
+          nextEntries =
+            nextEntry
+            |> Maybe.map (\n -> Array.set i n model.entries)
+            |> Maybe.withDefault model.entries
+      in
+          ( { model | entries = nextEntries }
+          , Cmd.none
+          )
+    ConfirmDelete i ->
+      let
+          nextEntries : Array Entry
+          nextEntries =
+            Array.append
+              (Array.slice 0 i model.entries)
+              (Array.slice (i + 1) (Array.length model.entries) model.entries)
+      in
+          ( { model | entries = nextEntries }
+          , cache <| encodeMemories (Array.map .memory nextEntries)
+          )
     GetTimeThenEdit i ->
       ( model
       , Task.perform (Edit i) (Time.now)
@@ -303,26 +359,7 @@ update msg model =
           next : Maybe Entry
           next =
             target
-            |> Maybe.map (\t -> { t | isEditing = False })
-
-          encodeMemories : Array Memory -> Encode.Value
-          encodeMemories memories =
-            Encode.array
-              encodeMemory
-              memories
-
-          encodeMemory : Memory -> Encode.Value
-          encodeMemory memory =
-            Encode.object
-              [ ("createdAt", Encode.int <| Time.posixToMillis memory.createdAt)
-              , ("updatedAt", Encode.int <| Time.posixToMillis memory.updatedAt)
-              , ( "title"
-                ,  memory.title
-                  |> Maybe.map Encode.string
-                  |> Maybe.withDefault Encode.null
-                )
-              , ("content", Encode.string memory.content)
-              ]
+            |> Maybe.map (\t -> { t | isEditing = False, isDeleting = False })
       in
           next
           |> Maybe.map (\n -> Array.set i n model.entries)
@@ -362,7 +399,7 @@ update msg model =
               Nothing
               ""
       in
-          ({ model | entries = Array.push (Entry True newMemory) model.entries }
+          ({ model | entries = Array.push (Entry True False newMemory) model.entries }
           , Cmd.none
           )
 
