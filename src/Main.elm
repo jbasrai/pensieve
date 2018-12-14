@@ -29,6 +29,7 @@ toEnglishMonth month =
   case month of
     Time.Oct -> "October"
     Time.Nov -> "November"
+    Time.Dec -> "December"
     _ -> "Some month"
 
 
